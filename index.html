@@ -2,6 +2,9 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Surtido Eficiente · OpenFarma</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -827,7 +830,8 @@ if(!CSV_URL){
   showLoadError('Todavía no se configuró el link de la planilla de datos.');
 } else {
   document.getElementById('list').innerHTML = `<div class="empty"><div class="big">Cargando datos…</div></div>`;
-  fetch(CSV_URL)
+  const bustCacheUrl = CSV_URL + (CSV_URL.includes('?') ? '&' : '?') + '_ts=' + Date.now();
+  fetch(bustCacheUrl, { cache: 'no-store' })
     .then(res=>{
       if(!res.ok) throw new Error('status ' + res.status);
       return res.text();

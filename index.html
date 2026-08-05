@@ -34,6 +34,7 @@
     font-family:'Inter',system-ui,-apple-system,sans-serif;
     -webkit-font-smoothing:antialiased;
     padding-bottom:40px;
+    text-transform:uppercase;
   }
   .mono{font-family:'JetBrains Mono',monospace;}
 
@@ -441,7 +442,6 @@
     <p class="hero-eyebrow">OpenFarma · Perfumería</p>
     <h1>Surtido Eficiente</h1>
     <p class="sub">Qué productos, de qué fabricantes, tiene cada sucursal</p>
-    <div class="updated-pill"><span class="dot"></span>Datos al <span id="updatedDate">30/07/2026</span></div>
   </div>
 </div>
 
@@ -735,12 +735,15 @@ function findHeader(headers, ...candidates){
 
 function buildDataFromRows(rows, headers){
   const hSucursal = findHeader(headers, 'Sucursal');
-  const hEan = findHeader(headers, 'EAN', 'Codigo Barra', 'Código Barra', 'Codigo de Barras');
+  const hEan = findHeader(headers, 'EAN', 'CODIGO_BARRA', 'Codigo Barra', 'Código Barra', 'Codigo de Barras');
   const hDesc = findHeader(headers, 'Descripcion', 'Descripción');
   const hCarga = findHeader(headers, 'Carga');
-  const hSubrubro = findHeader(headers, 'Subrubro');
-  const hCategoria = findHeader(headers, 'Categoria', 'Categoría');
-  const hLab = findHeader(headers, 'Laboratorio', 'Fabricante');
+  // "hSubrubro" = nivel amplio (pastillas de arriba). "hCategoria" = nivel granular (select de Departamento).
+  // El orden de candidatos importa: se prueba primero el nombre exclusivo de cada formato de planilla,
+  // para no confundir "Categoria" cuando aparece con distinto significado según el archivo.
+  const hSubrubro = findHeader(headers, 'Subrubro', 'Categoria', 'Categoría');
+  const hCategoria = findHeader(headers, 'Departamento', 'Categoria', 'Categoría');
+  const hLab = findHeader(headers, 'Marca', 'Laboratorio', 'Fabricante');
 
   if(!hSucursal || !hEan){
     throw new Error('Faltan columnas obligatorias (Sucursal / EAN) en la planilla.');
@@ -874,23 +877,43 @@ function openScanner(){
     verbose:false
   });
 
-  html5QrCode.start(
-    { facingMode: 'environment' },
-    { fps: 10, qrbox: { width: 260, height: 140 } },
-    (decodedText)=>{
-      if(!scanning) return;
-      scanning = false;
-      searchInput.value = decodedText;
-      state.search = decodedText.trim().toLowerCase();
-      render();
-      closeScanner();
-    },
-    ()=>{ /* frame sin resultado, ignorar */ }
-  ).then(()=>{ scanning = true; })
-  .catch(()=>{
-    scanHint.textContent = 'No se pudo acceder a la cámara. Revisá los permisos de cámara del navegador.';
+  const scanConfig = { fps: 10, qrbox: { width: 260, height: 140 } };
+  const onSuccess = (decodedText)=>{
+    if(!scanning) return;
+    scanning = false;
+    searchInput.value = decodedText;
+    state.search = decodedText.trim().toLowerCase();
+    render();
+    closeScanner();
+  };
+  const onFail = ()=>{ /* frame sin resultado, ignorar */ };
+  const onError = ()=>{
+    scanHint.textContent = 'No se pudo acceder a la cámara. Revisá los permisos de cámara en el navegador (en iPhone: Ajustes → Safari → Cámara).';
     scanHint.classList.add('scan-error');
-  });
+  };
+
+  // Safari/iOS suele rechazar "facingMode: environment" directo; probamos en cascada
+  // hasta encontrar un método que funcione, sin que el usuario note la diferencia.
+  html5QrCode.start({ facingMode: { exact: 'environment' } }, scanConfig, onSuccess, onFail)
+    .then(()=>{ scanning = true; })
+    .catch(()=>{
+      html5QrCode.start({ facingMode: 'environment' }, scanConfig, onSuccess, onFail)
+        .then(()=>{ scanning = true; })
+        .catch(()=>{
+          Html5Qrcode.getCameras()
+            .then(devices=>{
+              if(devices && devices.length){
+                const backCam = devices[devices.length - 1];
+                html5QrCode.start(backCam.id, scanConfig, onSuccess, onFail)
+                  .then(()=>{ scanning = true; })
+                  .catch(onError);
+              } else {
+                onError();
+              }
+            })
+            .catch(onError);
+        });
+    });
 }
 
 function closeScanner(){
